@@ -1,26 +1,61 @@
-<!-- <div>
-  <input type="number" [(ngModel)]="recordCount" placeholder="Enter N records" />
-  <button (click)="updateRecords()">Update Records</button>
-</div> -->
+<!-- <label for="recordCount">Number of Records:</label>
+<input id="recordCount" type="number" [(ngModel)]="numberOfRecords" min="1" max="100" />
+<button (click)="updateRecords()">Update</button> -->
+<!-- </div> -->
 
-<!-- <ag-grid-angular
-  style="width: 100%; height: 500px;"
-  class="ag-theme-alpine"
-  [rowData]="rowData"
-  [columnDefs]="columnDefs"
-  [infiniteScroll]="true"
-  [getRowNodeId]="getRowNodeId"
->
-</ag-grid-angular> -->
+<!-- Custom Dialog -->
+<div class="custom-dialog-overlay" *ngIf="isDialogOpen">
+  <div class="custom-dialog">
+    <div class="custom-dialog-header">
+      <h2>Statistics</h2>
+      <button class="close-button" (click)="closeDialog()">&times;</button>
+    </div>
+    <div class="custom-dialog-content">
+      <div class="stats-box">
+        <div class="stats-item">
+          <span class="stats-title">Total Records Received:</span>
+          <span class="stats-value">{{ statistics?.totalRecordsReceived }}</span>
+        </div>
+        <div class="stats-item">
+          <span class="stats-title">Total Updates Applied:</span>
+          <span class="stats-value">{{ statistics?.totalUpdatesApplied }}</span>
+        </div>
+        <div class="stats-item">
+          <span class="stats-title">Last Update Time:</span>
+          <span class="stats-value">{{ statistics?.lastUpdateTimestamp || 'N/A' }}</span>
+        </div>
+      </div>
+    
+      <h4>Last 5 Update Time Differences (in seconds)</h4>
+      <div class="time-differences">
+        <ul>
+          <li *ngFor="let diff of statistics?.lastFiveUpdateDifferences">
+            <span class="time-label">Update Interval:</span>
+            <span class="time-value">{{ diff }}s</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+    <!-- <div class="custom-dialog-footer">
+      <button class="dialog-button" (click)="closeDialog()">Close</button>
+    </div> -->
+  </div>
+</div>
 
-<ag-grid-angular
-    style="width: 100%; height: 100%;"
-    class="ag-theme-alpine"
-    [columnDefs]="columnDefs"
-    [rowHeight]="rowHeight"
-    [rowModelType]="rowModelType"
-    [viewportDatasource]="viewportDatasource"
-  ></ag-grid-angular>
+
+
+<div class="example-wrapper">
+  <div style="margin-bottom: 5px; display: flex; justify-content: flex-end;">
+    <button class="stats-button" (click)="openDialog()">Show Stats</button>
+    <!-- <button (click)="onFlushTransactions()">Flush Transactions</button>
+    <span id="eMessage"></span>
+    <span>Total records: {{totalRecords}}</span> -->
+  </div>
+  <ag-grid-angular style="width: 100%; height: 100%;" [columnDefs]="columnDefs" [suppressAggFuncInHeader]="true"
+    [rowGroupPanelShow]="rowGroupPanelShow" [asyncTransactionWaitMillis]="asyncTransactionWaitMillis"
+    [getRowId]="getRowId" [defaultColDef]="defaultColDef" [autoGroupColumnDef]="autoGroupColumnDef" [rowData]="rowData"
+    (asyncTransactionsFlushed)="onAsyncTransactionsFlushed($event)" (gridReady)="onGridReady($event)" />
+</div>
 
 
 

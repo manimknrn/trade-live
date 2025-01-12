@@ -1,28 +1,41 @@
-import { CommonModule } from "@angular/common";
-import { Component, CUSTOM_ELEMENTS_SCHEMA } from "@angular/core";
-import { RouterModule } from "@angular/router";
-
+import { Component, CUSTOM_ELEMENTS_SCHEMA, OnDestroy } from "@angular/core";
 import { AgGridAngular } from "ag-grid-angular";
-import type { ColDef } from "ag-grid-community";
-import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
-import { WebSocketSubject } from "rxjs/webSocket";
-import { FormsModule } from '@angular/forms';
-import { Subscription } from "rxjs";
+import {
+  AllCommunityModule,
+  AsyncTransactionsFlushedEvent,
+  CellStyleModule,
+  ClientSideRowModelApiModule,
+  ClientSideRowModelModule,
+  ColDef,
+  GetRowIdFunc,
+  GetRowIdParams,
+  GridApi,
+  GridReadyEvent,
+  HighlightChangesModule,
+  ModuleRegistry,
+  ValidationModule,
+  ValueFormatterParams,
+} from "ag-grid-community";
+import { RowGroupingModule, RowGroupingPanelModule, ViewportRowModelModule } from "ag-grid-enterprise";
+ModuleRegistry.registerModules([
+  ClientSideRowModelApiModule,
+  CellStyleModule,
+  ClientSideRowModelModule,
+  RowGroupingModule,
+  RowGroupingPanelModule,
+  HighlightChangesModule,
+  ValidationModule /* Development Only */,
+]);
+import { LicenseManager } from 'ag-grid-enterprise';
+import { RouterModule } from "@angular/router";
+import { CommonModule } from "@angular/common";
 import { StockService } from "./service/stock.service";
-import { OnDestroy } from '@angular/core';
-import { IViewportDatasource, IViewportDatasourceParams, RowModelType } from 'ag-grid-community';
-import { ViewportRowModelModule } from "ag-grid-enterprise";
+export const AG_GRID_LICENSE_KEY = 'Using_this_{AG_Grid}_Enterprise_key_{AG-057603}_in_excess_of_the_licence_granted_is_not_permitted___Please_report_misuse_to_legal@ag-grid.com___For_help_with_changing_this_key_please_contact_info@ag-grid.com___{Nasdaq}_is_granted_a_{Single_Application}_Developer_License_for_the_application_{Calypso}_only_for_{20}_Front-End_JavaScript_developers___All_Front-End_JavaScript_developers_working_on_{Calypso}_need_to_be_licensed___{Calypso}_has_been_granted_a_Deployment_License_Add-on_for_{Unlimited}_Production_Environments___This_key_works_with_{AG_Grid}_Enterprise_versions_released_before_{29_June_2025}____[v3]_[01]_MTc1MTE1MTYwMDAwMA==fe9f06a7f30283b78dc3be500b18b0ac';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 ModuleRegistry.registerModules([ViewportRowModelModule]);
+import { FormsModule } from '@angular/forms';
 
-// Row Data Interface
-interface IRow {
-  make: string;
-  model: string;
-  price: number;
-  electric: boolean;
-}
 
 @Component({
   standalone: true,
@@ -33,99 +46,270 @@ interface IRow {
   styleUrls: ["./app.component.scss"],
 })
 export class AppComponent implements OnDestroy {
-  public columnDefs = [
-    { headerName: 'ID', field: 'id' },
-    { headerName: 'Asset Name', field: 'assetName' },
-    { headerName: 'Price', field: 'price' },
-    { headerName: 'Last Update', field: 'lastUpdate' },
-    { headerName: 'Type', field: 'type' },
+
+  constructor(readonly webSocketService: StockService) {
+    LicenseManager.setLicenseKey(AG_GRID_LICENSE_KEY);
+  }
+  private subscription!: () => void;
+  private gridApi!: GridApi;
+  numberOfRecords: number = 20000;
+  totalRecords: number = 0;
+  statistics: any;
+  isDialogOpen = false;
+
+  public columnDefs: ColDef[] = [
+    // these are the row groups, so they are all hidden (they are show in the group column)
+    {
+      headerName: "Product",
+      field: "product",
+      enableRowGroup: false,
+      rowGroupIndex: 0,
+      hide: true,
+    },
+    // {
+    //   headerName: "Portfolio",
+    //   field: "portfolio",
+    //   enableRowGroup: false,
+    //   // rowGroupIndex: 1,
+    //   hide: false,
+    // },
+    // {
+    //   headerName: "Book",
+    //   field: "book",
+    //   enableRowGroup: false,
+    //   // rowGroupIndex: 2,
+    //   hide: false,
+    // },
+    {
+      headerName: "Trade",
+      field: "trade",
+      width: 100,
+      aggFunc: "min",
+      enableValue: true,
+      cellClass: "number",
+      valueFormatter: numberCellFormatter,
+      cellRenderer: "agAnimateShowChangeCellRenderer",
+    },
+    // all the other columns (visible and not grouped)
+    {
+      headerName: "Current",
+      field: "current",
+      width: 200,
+      aggFunc: "sum",
+      enableValue: true,
+      cellClass: "number",
+      valueFormatter: numberCellFormatter,
+      cellRenderer: "agAnimateShowChangeCellRenderer",
+    },
+    {
+      headerName: "Previous",
+      field: "previous",
+      width: 200,
+      aggFunc: "sum",
+      enableValue: true,
+      cellClass: "number",
+      valueFormatter: numberCellFormatter,
+      cellRenderer: "agAnimateShowChangeCellRenderer",
+    },
+    {
+      headerName: "Deal Type",
+      field: "dealType",
+      enableRowGroup: true,
+    },
+    {
+      headerName: "Bid",
+      field: "bidFlag",
+      enableRowGroup: true,
+      width: 100,
+    },
+    {
+      headerName: "PL 1",
+      field: "pl1",
+      width: 200,
+      aggFunc: "sum",
+      enableValue: true,
+      cellClass: "number",
+      valueFormatter: numberCellFormatter,
+      cellRenderer: "agAnimateShowChangeCellRenderer",
+    },
+    {
+      headerName: "PL 2",
+      field: "pl2",
+      width: 200,
+      aggFunc: "sum",
+      enableValue: true,
+      cellClass: "number",
+      valueFormatter: numberCellFormatter,
+      cellRenderer: "agAnimateShowChangeCellRenderer",
+    },
+    {
+      headerName: "Gain-DX",
+      field: "gainDx",
+      width: 200,
+      aggFunc: "sum",
+      enableValue: true,
+      cellClass: "number",
+      valueFormatter: numberCellFormatter,
+      cellRenderer: "agAnimateShowChangeCellRenderer",
+    },
+    {
+      headerName: "SX / PX",
+      field: "sxPx",
+      width: 200,
+      aggFunc: "sum",
+      enableValue: true,
+      cellClass: "number",
+      valueFormatter: numberCellFormatter,
+      cellRenderer: "agAnimateShowChangeCellRenderer",
+    },
+    {
+      headerName: "99 Out",
+      field: "_99Out",
+      width: 200,
+      aggFunc: "sum",
+      enableValue: true,
+      cellClass: "number",
+      valueFormatter: numberCellFormatter,
+      cellRenderer: "agAnimateShowChangeCellRenderer",
+    },
+    {
+      headerName: "Submitter ID",
+      field: "submitterID",
+      width: 200,
+      aggFunc: "sum",
+      enableValue: true,
+      cellClass: "number",
+      valueFormatter: numberCellFormatter,
+      cellRenderer: "agAnimateShowChangeCellRenderer",
+    },
+    {
+      headerName: "Submitted Deal ID",
+      field: "submitterDealID",
+      width: 200,
+      aggFunc: "sum",
+      enableValue: true,
+      cellClass: "number",
+      valueFormatter: numberCellFormatter,
+      cellRenderer: "agAnimateShowChangeCellRenderer",
+    },
   ];
+  public rowGroupPanelShow: "always" | "onlyWhenGrouping" | "never" = "always";
+  public asyncTransactionWaitMillis = 4000;
+  public getRowId: GetRowIdFunc = (params: GetRowIdParams) =>
+    String(params.data.trade);
+  public defaultColDef: ColDef = {
+    width: 120,
+  };
+  public autoGroupColumnDef: ColDef = {
+    width: 250,
+  };
+  public rowData!: any[];
 
-  public rowHeight = 50;
-  public rowModelType: RowModelType = 'viewport';
-  public viewportDatasource: IViewportDatasource;
-
-  private viewportParams!: IViewportDatasourceParams;
-
-  constructor(private stockService: StockService) {
-    this.viewportDatasource = this.createViewportDatasource();
-    this.listenToStockUpdates();
+  onAsyncTransactionsFlushed(e: AsyncTransactionsFlushedEvent) {
+    console.log(
+      "========== onAsyncTransactionsFlushed: applied " +
+      e.results.length +
+      " transactions",
+    );
   }
 
-  /**
-   * Creates a custom ViewportDatasource to handle the loading of visible rows.
-   */
-  private createViewportDatasource(): IViewportDatasource {
-    return {
-      init: (params: IViewportDatasourceParams) => {
-        this.viewportParams = params;
-        const totalRowCount = 1000000; // Simulating a large dataset
-        params.setRowCount(totalRowCount);
-      },
-      setViewportRange: (firstRow: number, lastRow: number) => {
-        // Fetch initial data for the visible rows
-        const rowData: any = {};
-        for (let rowIndex = firstRow; rowIndex <= lastRow; rowIndex++) {
-          const item = {
-            id: rowIndex,
-            assetName: `Asset-${rowIndex}`,
-            price: this.generateRandomPrice(),
-            lastUpdate: new Date().toISOString(),
-            type: rowIndex % 2 === 0 ? 'Type A' : 'Type B',
-          };
-          rowData[rowIndex] = item;
-        }
-        this.viewportParams.setRowData(rowData);
+  onFlushTransactions() {
+    this.gridApi.flushAsyncTransactions();
+  }
 
-        // Notify the WebSocket service to subscribe to the range
-        this.stockService.subscribeToData(firstRow, lastRow);
-      },
-      destroy: () => {
-        // Unsubscribe from WebSocket updates when the viewport is destroyed
-        this.stockService.unsubscribeFromData();
-      },
+  updateRecords(): void {
+
+    // Request records from the server
+    // this.webSocketService.requestRecords(this.numberOfRecords);
+  }
+
+  openDialog() {
+    this.isDialogOpen = true;
+  }
+
+  closeDialog() {
+    this.isDialogOpen = false;
+  }
+
+  onGridReady(params: GridReadyEvent) {
+    this.gridApi = params.api;
+
+    this.statistics = {
+      totalRecordsReceived: 0,
+      totalUpdatesApplied: 0,
+      lastUpdateTimestamp: null,
+      lastFiveUpdateDifferences: [] as number[], // Array to store time differences
+      lastFiveUpdateTimestamps: [] as string[], // For display
     };
-  }
 
-  /**
-   * Listens for live updates from the WebSocket service.
-   */
-  private listenToStockUpdates(): void {
-    this.stockService.getStockUpdates().subscribe((message) => {
-      if (message.type === 'update') {
-        this.updatePrices(message.data);
+    this.webSocketService.listenForUpdates(this.numberOfRecords).subscribe((message: any) => {
+      if (!this.gridApi) {
+        console.error('Grid API is not ready yet.');
+        return;
+      }
+
+      this.totalRecords = message.data.length;
+
+      // Capture the current timestamp
+      const currentTimestamp = new Date();
+
+      this.statistics.totalRecordsReceived = message.data.length;
+      this.statistics.lastUpdateTimestamp = currentTimestamp.toLocaleTimeString();
+
+      // Calculate and store time difference for the last 5 updates
+      if (this.statistics.lastFiveUpdateTimestamps.length > 0) {
+        const previousTimestamp = new Date(
+          this.statistics.lastFiveUpdateTimestamps[this.statistics.lastFiveUpdateTimestamps.length - 1]
+        );
+        const timeDifferenceInSeconds = Math.round((currentTimestamp.getTime() - previousTimestamp.getTime()) / 1000);
+        this.statistics.lastFiveUpdateDifferences.push(timeDifferenceInSeconds);
+
+        // Keep only the last 5 differences
+        if (this.statistics.lastFiveUpdateDifferences.length > 5) {
+          this.statistics.lastFiveUpdateDifferences.shift();
+        }
+      }
+
+      // Add the current timestamp to the list
+      this.statistics.lastFiveUpdateTimestamps.push(currentTimestamp.toISOString());
+      if (this.statistics.lastFiveUpdateTimestamps.length > 5) {
+        this.statistics.lastFiveUpdateTimestamps.shift();
+      }
+
+      // this.totalRecords = params.api.getDisplayedRowCount();
+      if (message.type === 'initial') {
+        // Set the initial data
+        this.rowData = message.data;
+        params.api.setGridOption("rowData", this.rowData);
+        params.api.setGridOption("grandTotalRow", 'bottom');
+      } else if (message.type === 'update') {
+        // Apply updates to the grid
+        const updates = message.data;
+        const validUpdates = updates.filter((update: any) =>
+          this.rowData.some(row => row.trade === update.trade)
+        );
+
+        if (validUpdates.length) {
+          this.statistics.totalUpdatesApplied += validUpdates.length;
+          this.gridApi.applyTransaction({ update: validUpdates });
+        } else {
+          this.statistics.totalUpdatesApplied += message.data.length;
+          this.gridApi.setGridOption("rowData", message.data);
+        }
       }
     });
   }
 
-  /**
-   * Updates the prices of rows dynamically based on WebSocket updates.
-   * @param updatedData Array of updated rows from the server.
-   */
-  private updatePrices(updatedData: any[]): void {
-    updatedData.forEach((data) => {
-      const rowNode = this.viewportParams.getRow(data.id);
-      if (rowNode) {
-        rowNode.setData({
-          ...rowNode.data,
-          price: data.price,
-          lastUpdate: new Date().toISOString(),
-        });
-      }
-    });
-  }
-
-  /**
-   * Generates a random price for simulation.
-   */
-  private generateRandomPrice(): number {
-    return parseFloat((Math.random() * 100 + 1).toFixed(2));
-  }
-
-  /**
-   * Clean up WebSocket connection when the component is destroyed.
-   */
-  ngOnDestroy(): void {
-    this.stockService.closeConnection();
+  ngOnDestroy() {
+    if (this.subscription) {
+      this.subscription(); // Call the cleanup function returned by startFeed
+    }
   }
 }
+
+function numberCellFormatter(params: ValueFormatterParams) {
+  return Math.floor(params.value)
+    .toString()
+    .replace(/(\d)(?=(\d{3})+(?!\d))/g, "$1,");
+}
+
