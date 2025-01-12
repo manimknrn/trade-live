@@ -1,4 +1,4 @@
-import { Component, CUSTOM_ELEMENTS_SCHEMA, OnDestroy } from "@angular/core";
+import { Component, CUSTOM_ELEMENTS_SCHEMA } from "@angular/core";
 import { AgGridAngular } from "ag-grid-angular";
 import {
   AllCommunityModule,
@@ -36,7 +36,6 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 ModuleRegistry.registerModules([ViewportRowModelModule]);
 import { FormsModule } from '@angular/forms';
 
-
 @Component({
   standalone: true,
   imports: [AgGridAngular, RouterModule, CommonModule, FormsModule],
@@ -45,14 +44,13 @@ import { FormsModule } from '@angular/forms';
   templateUrl: "./app.component.html",
   styleUrls: ["./app.component.scss"],
 })
-export class AppComponent implements OnDestroy {
+export class AppComponent {
 
   constructor(readonly webSocketService: StockService) {
     LicenseManager.setLicenseKey(AG_GRID_LICENSE_KEY);
   }
-  private subscription!: () => void;
   private gridApi!: GridApi;
-  numberOfRecords: number = 20000;
+  numberOfRecords: number = 500;
   totalRecords: number = 0;
   statistics: any;
   isDialogOpen = false;
@@ -220,7 +218,9 @@ export class AppComponent implements OnDestroy {
   updateRecords(): void {
 
     // Request records from the server
-    // this.webSocketService.requestRecords(this.numberOfRecords);
+    // this.webSocketService.listenForUpdates(this.numberOfRecords);
+    this.statistics.liveUpdatesReceived = 0;
+    this.subscribeToUpdate()
   }
 
   openDialog() {
@@ -240,8 +240,15 @@ export class AppComponent implements OnDestroy {
       lastUpdateTimestamp: null,
       lastFiveUpdateDifferences: [] as number[], // Array to store time differences
       lastFiveUpdateTimestamps: [] as string[], // For display
+      liveUpdatesReceived: 0, // Track the number of live updates received
     };
 
+    console.log('service time: ', this.webSocketService.receiveTime);
+
+    this.subscribeToUpdate();
+  }
+
+  subscribeToUpdate() {
     this.webSocketService.listenForUpdates(this.numberOfRecords).subscribe((message: any) => {
       if (!this.gridApi) {
         console.error('Grid API is not ready yet.');
@@ -276,12 +283,20 @@ export class AppComponent implements OnDestroy {
         this.statistics.lastFiveUpdateTimestamps.shift();
       }
 
+      // Update the statistics
+    this.statistics.liveUpdatesReceived++;
+    const maxLiveUpdates = this.numberOfRecords; 
+    if (this.statistics.liveUpdatesReceived >= maxLiveUpdates) {
+      console.log('Maximum number of live updates received. Closing connection...');
+      this.webSocketService.closeConnection();
+    }
+
       // this.totalRecords = params.api.getDisplayedRowCount();
       if (message.type === 'initial') {
         // Set the initial data
         this.rowData = message.data;
-        params.api.setGridOption("rowData", this.rowData);
-        params.api.setGridOption("grandTotalRow", 'bottom');
+        this.gridApi.setGridOption("rowData", this.rowData);
+        this.gridApi.setGridOption("grandTotalRow", 'bottom');
       } else if (message.type === 'update') {
         // Apply updates to the grid
         const updates = message.data;
@@ -297,13 +312,12 @@ export class AppComponent implements OnDestroy {
           this.gridApi.setGridOption("rowData", message.data);
         }
       }
-    });
-  }
 
-  ngOnDestroy() {
-    if (this.subscription) {
-      this.subscription(); // Call the cleanup function returned by startFeed
-    }
+      // if (this.statistics.totalRecordsReceived >= this.numberOfRecords) {
+      //   // this.subscription.unsubscribe();  // Stop listening after the required records are received
+      //   this.webSocketService.closeConnection();
+      // }
+    });
   }
 }
 
