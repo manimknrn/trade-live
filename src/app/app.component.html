@@ -1,0 +1,27 @@
+<!-- <div>
+  <input type="number" [(ngModel)]="recordCount" placeholder="Enter N records" />
+  <button (click)="updateRecords()">Update Records</button>
+</div> -->
+
+<!-- <ag-grid-angular
+  style="width: 100%; height: 500px;"
+  class="ag-theme-alpine"
+  [rowData]="rowData"
+  [columnDefs]="columnDefs"
+  [infiniteScroll]="true"
+  [getRowNodeId]="getRowNodeId"
+>
+</ag-grid-angular> -->
+
+<ag-grid-angular
+    style="width: 100%; height: 100%;"
+    class="ag-theme-alpine"
+    [columnDefs]="columnDefs"
+    [rowHeight]="rowHeight"
+    [rowModelType]="rowModelType"
+    [viewportDatasource]="viewportDatasource"
+  ></ag-grid-angular>
+
+
+
+<router-outlet />
